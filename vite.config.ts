@@ -10,9 +10,11 @@ export default defineConfig({
   server: {
     proxy: {
       // API 请求：H5 里请求 /api/xxx → 转发到 DSH /api/xxx
+      // ws: true 让 WebSocket（/api/remote.mux）也走这个代理
       "/api": {
         target: DSH_TARGET,
         changeOrigin: false, // 保持 Host，让 cookie 的 authority 与浏览器看到的 origin 一致
+        ws: true,
       },
       // token 交换：H5 里请求 /auth?token=xxx → 转发到 DSH /?token=xxx
       "/auth": {

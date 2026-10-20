@@ -30,11 +30,16 @@ export function buildRequest<T extends object>(
   request: T,
 ): RpcRequest<T> {
   const isList = method === HttpMethodList.list
+  // 无参方法不能带 request 字段，否则 Typert 严格校验会拒绝
+  const isNoArg =
+    method === HttpMethodList.modelCatalog ||
+    method === HttpMethodList.agentPresetsList
 
-
-  const args: any = isList
-    ? { _request: request }
-    : { request: request }
+  const args: any = isNoArg
+    ? {}
+    : isList
+      ? { _request: request }
+      : { request: request }
 
   return {
     type: 'client-request',

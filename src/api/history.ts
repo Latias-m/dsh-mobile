@@ -114,6 +114,9 @@ export function toBubbles(records: SessionPageRecord[]): Bubble[] {
         break;
 
       case 'user/message':
+        // DSH 注入的多条 role=user 消息（agent-instructions / runtime-context / skill-catalog）
+        // 只有 source.kind === 'user' 才是用户真正输入的内容
+        if (d?.source?.kind !== 'user') break;
         flush(); // 用户消息前，先把之前攒的 AI 回复发出去
         bubbles.push({
           role: 'user',
@@ -160,6 +163,8 @@ export function toBubbles(records: SessionPageRecord[]): Bubble[] {
       }
 
       case 'system/message': {
+        // 系统提示词（source.kind === 'system-prompt'）是内部内容，不显示
+        if (d?.message?.source?.kind === 'system-prompt') break;
         const text = textOf(d?.message?.content);
         if (!text) break;
         if (parts.length === 0) {

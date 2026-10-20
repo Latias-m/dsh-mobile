@@ -32,6 +32,8 @@ export const HttpMethodList = {
   projections: 'session/projections',
   initializeDefaultModel: 'session/initializeDefaultModel',
   updateQueue: 'session/updateQueue',
+  // agentPresets 命名空间（非 session/*）
+  agentPresetsList: 'agentPresets/list',
 } as const
 
 // ============ RPC 方法（WebSocket 流式）============

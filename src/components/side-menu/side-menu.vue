@@ -15,6 +15,7 @@
           <text class="arrow"><</text>
           <text class="panel-title">菜单</text>
         </view>
+        <text class="add-btn" @click="onAddSession">＋</text>
         <view
           class="resize-handle"
           @touchstart="onResizeStart"
@@ -100,10 +101,14 @@ async function openMenu() {
 }
 
 function onSelect(e: SessionListItem) {
-  console.log(e.sessionId);
   global.setSession(e);
-  uni.navigateTo({ url: '/pages/chat/chat' });
+  const title = encodeURIComponent(e.projections?.values.title ?? '');
+  uni.navigateTo({ url: `/pages/chat/chat?sessionId=${e.sessionId}&title=${title}` });
   expanded.value = false;
+}
+
+function onAddSession() {
+  uni.navigateTo({ url: '/pages/session-create/session-create' });
 }
 </script>
 
@@ -111,9 +116,8 @@ function onSelect(e: SessionListItem) {
 .drag-area {
   position: fixed;
   left: 0;
-  top: 25vh;
-  width: 64rpx;
-  height: 50vh;
+  width: 24rpx;
+  height: 100%;
   z-index: 1000;
 }
 
@@ -134,15 +138,15 @@ function onSelect(e: SessionListItem) {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 64rpx;
-  height: 120rpx;
+  width: 25rpx;
+  height: 60rpx;
   background: #ffffff;
-  border-radius: 0 16rpx 16rpx 0;
+  border-radius: 0 8rpx 8rpx 0;
   box-shadow: -2rpx 0 10rpx rgba(0, 0, 0, 0.12);
 }
 
 .arrow {
-  font-size: 32rpx;
+  font-size: 15rpx;
   color: #333;
   line-height: 1;
 }
@@ -170,7 +174,7 @@ function onSelect(e: SessionListItem) {
   left: 0;
   height: 100vh;
   background: #ffffff;
-  border-radius: 16rpx 0 0 16rpx;
+  border-radius: 0 16rpx 16rpx 0;
   box-shadow: -2rpx 0 10rpx rgba(0, 0, 0, 0.12);
   z-index: 1002;
   display: flex;
@@ -196,6 +200,14 @@ function onSelect(e: SessionListItem) {
   color: #333;
 }
 
+.add-btn {
+  margin-left: auto;
+  padding: 0 20rpx;
+  font-size: 44rpx;
+  line-height: 1;
+  color: #007aff;
+}
+
 .panel-body {
   flex: 1;
   height: 0;
@@ -205,7 +217,6 @@ function onSelect(e: SessionListItem) {
 }
 
 .resize-handle {
-  margin-left: auto;
   align-self: stretch;
   width: 32rpx;
   cursor: ew-resize;

@@ -132,3 +132,137 @@ export interface SessionPromptValue {
   /** 是否已被接受并排队（真正的回复走 WebSocket 流式，不在这里返回） */
   accepted: true
 }
+
+// ============ session/create（新建会话）============
+
+/** session/create 请求体 */
+export interface SessionCreateRequest {
+  /** 工作区 id（可选） */
+  workspaceId?: string
+  /** 工作目录（可选） */
+  cwd?: string
+  /** 会话 id（可选，不传则服务端自动生成） */
+  sessionId?: string
+  /** 人设（可选，如 standard / ptc / minimal / cordis） */
+  agentPreset?: string
+}
+
+/** session/create 返回体 */
+export interface SessionCreateValue {
+  /** 新会话 id */
+  sessionId: string
+  /** 实际生效的人设（可选） */
+  agentPreset?: string
+}
+
+// ============ session/follow（WebSocket 流式订阅）============
+
+/** session/follow 请求体 */
+export interface SessionFollowRequest {
+  /** 目标会话地址 */
+  address: SessionAddress
+  /** 是否开启 assistant 流式（打字机效果）；不传 = 整段输出 */
+  assistantStream?: true
+  /** 快照最多返回多少条消息 */
+  maxMessages?: number
+  /** 按轮次窗口筛选 */
+  turnWindow?: {
+    minMessages: number
+    minTurns: number
+  }
+}
+
+// ============ session/modelCatalog（模型目录）============
+
+/** 一个模型选择（provider + model + 可选思考强度） */
+export interface ModelSelection {
+  provider: string
+  model: string
+  reasoningEffort?: string
+}
+
+/** 模型目录里的一组（一个 provider 下的所有模型） */
+export interface ModelGroup {
+  /** provider id（selectModel 的 provider 字段） */
+  id: string
+  /** provider 显示名 */
+  name: string
+  /** 该 provider 下的模型 */
+  models: ModelEntry[]
+}
+
+/** 单个模型条目 */
+export interface ModelEntry {
+  /** model id（selectModel 的 model 字段） */
+  id: string
+  /** model 显示名 */
+  name: string
+  /** 模型描述（可选） */
+  description?: string
+  /** 推理能力（只有推理模型才有） */
+  reasoning?: {
+    efforts: { id: string; name: string; description?: string }[]
+    defaultEffort?: string
+  }
+}
+
+/** 拉取失败的 provider（如缺 API key） */
+export interface ModelCatalogFailure {
+  id: string
+  name: string
+  message: string
+}
+
+/** session/modelCatalog 返回体 */
+export interface ModelCatalogValue {
+  /** 当前全局默认模型 */
+  default: ModelSelection
+  /** 可路由的 provider id 列表 */
+  routableProviders: string[]
+  /** 可用模型分组 */
+  groups: ModelGroup[]
+  /** 拉取失败的 provider */
+  failures: ModelCatalogFailure[]
+}
+
+// ============ session/selectModel（选择模型）============
+
+/** session/selectModel 请求体 */
+export interface SelectModelRequest {
+  /** 目标会话 id */
+  sessionId: string
+  /** provider id（来自 modelCatalog 的 groups[].id） */
+  provider: string
+  /** model id（来自 modelCatalog 的 models[].id） */
+  model: string
+  /** 思考强度（可选，仅推理模型） */
+  reasoningEffort?: string
+}
+
+/** session/selectModel 返回体 */
+export interface SelectModelValue {
+  /** 实际生效的模型选择 */
+  selected: ModelSelection
+}
+
+// ============ agentPresets/list（人设列表）============
+
+/** 单个人设条目 */
+export interface AgentPresetRow {
+  /** 人设 id（session/create 的 agentPreset 字段） */
+  id: string
+  /** 是否为默认人设 */
+  isDefault: boolean
+  /** 人设显示名（可选） */
+  name?: string
+  /** 人设描述（可选） */
+  description?: string
+  /** 加载失败原因（有值 = 该人设不可用） */
+  broken?: string
+}
+
+/** agentPresets/list 返回体 */
+export interface AgentPresetListValue {
+  /** 可用人设列表 */
+  presets: AgentPresetRow[]
+}
