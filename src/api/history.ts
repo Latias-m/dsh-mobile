@@ -10,7 +10,7 @@
 //   history.ts  → toBubbles() 把事件流转成 Bubble[]（本文件）
 //   chat.vue    → 渲染 Bubble[]
 
-import type { SessionPageRecord } from './types';
+import type { SessionPageRecord, TokenUsage } from './types';
 
 /** 顶层气泡：用户气泡 或 AI 回复气泡 */
 export type Bubble = UserBubble | AssistantBubble;
@@ -39,6 +39,8 @@ export interface AssistantBubble {
   turn?: number;
   /** AI 回复的所有部分（文字 / 工具调用 / 工具结果 / 系统） */
   parts: AssistantPart[];
+  /** 本轮 token 用量（含缓存命中，可选） */
+  usage?: TokenUsage;
 }
 
 /** part 的公共字段 */

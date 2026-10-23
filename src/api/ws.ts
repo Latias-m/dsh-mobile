@@ -26,32 +26,44 @@ function wsUrl(): string {
   // #endif
 }
 
+/** ws 物理连接状态 */
+export type WsConnStatus = 'connected' | 'disconnected';
+
+/** follow 句柄：支持手动重连与取消 */
+export interface FollowHandle {
+  /** 停止订阅并关闭连接（离开页面时调用） */
+  cancel: () => void;
+  /** 手动重连（断开后重新建立连接并重新 open 流） */
+  reconnect: () => void;
+}
+
 /**
  * 订阅会话事件流（开启 assistantStream，逐段下发 assistant 输出）。
+ * 断线后不自动 finish，而是标记 disconnected 并交给上层 timer 驱动重连；
+ * 只有显式 cancel 才会真正结束并触发 onDone。
  * @param sessionId 会话 id
  * @param onFrame 收到一个 follow 帧时回调（snapshot / event / assistant-stream）
- * @param onDone 流结束（end/error/close）时回调
- * @returns 取消订阅函数
+ * @param onDone 显式取消时回调（不再用于断线提示）
+ * @param onStatus 物理连接状态变化回调（connected / disconnected）
+ * @returns 句柄（cancel / reconnect）
  */
 export function followSession(
   sessionId: string,
   onFrame: (frame: unknown) => void,
   onDone?: () => void,
-): () => void {
-  const streamId = `s-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  onStatus?: (status: WsConnStatus) => void,
+): FollowHandle {
   let closed = false;
   let task: UniApp.SocketTask | null = null;
+  let streamId = '';
 
-  const finish = (reason?: string) => {
-    if (closed) return;
-    closed = true;
-    console.log('[ws] finish:', reason || '');
+  const cleanupSocket = () => {
     try {
       task?.close({});
     } catch {
       /* noop */
     }
-    onDone?.();
+    task = null;
   };
 
   const openStream = () => {
@@ -83,40 +95,69 @@ export function followSession(
     if (msg.type === 'item') {
       onFrame(msg.value);
     } else if (msg.type === 'end' || msg.type === 'error') {
-      finish(`frame:${msg.type}`);
+      // 逻辑流结束：标记断开，交给上层 timer 重连
+      cleanupSocket();
+      onStatus?.('disconnected');
     }
   };
 
-  // App 端：手动带 cookie（H5 走同源代理，浏览器自动带）
-  let header: Record<string, string> = {};
-  // #ifdef APP-PLUS
-  const cookie = uni.getStorageSync(KEY_COOKIE);
-  if (cookie) header = { Cookie: String(cookie) };
-  // #endif
+  const connect = () => {
+    if (closed) return;
+    streamId = `s-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-  console.log('[ws] url:', wsUrl(), '| cookie:', header.Cookie ? '有' : '无');
+    // App 端：手动带 cookie（H5 走同源代理，浏览器自动带）
+    let header: Record<string, string> = {};
+    // #ifdef APP-PLUS
+    const cookie = uni.getStorageSync(KEY_COOKIE);
+    if (cookie) header = { Cookie: String(cookie) };
+    // #endif
 
-  task = uni.connectSocket({
-    url: wsUrl(),
-    header,
-    complete: () => {},
-  });
-  task.onOpen(() => {
-    console.log('[ws] onOpen');
-    openStream();
-  });
-  task.onMessage((res) => {
-    console.log('[ws] onMessage:', String(res.data).slice(0, 300));
-    onMessage(String(res.data));
-  });
-  task.onError(() => {
-    console.log('[ws] onError');
-    finish('error');
-  });
-  task.onClose((res: any) => {
-    console.log('[ws] onClose:', JSON.stringify(res));
-    finish('close');
-  });
+    console.log('[ws] connect url:', wsUrl(), '| cookie:', header.Cookie ? '有' : '无');
 
-  return finish;
+    task = uni.connectSocket({
+      url: wsUrl(),
+      header,
+      complete: () => {},
+    });
+    task.onOpen(() => {
+      if (closed) return;
+      console.log('[ws] onOpen');
+      onStatus?.('connected');
+      openStream();
+    });
+    task.onMessage((res) => {
+      if (closed) return;
+      onMessage(String(res.data));
+    });
+    task.onError(() => {
+      if (closed) return;
+      console.log('[ws] onError');
+      cleanupSocket();
+      onStatus?.('disconnected');
+    });
+    task.onClose(() => {
+      if (closed) return;
+      console.log('[ws] onClose');
+      cleanupSocket();
+      onStatus?.('disconnected');
+    });
+  };
+
+  const cancel = () => {
+    if (closed) return;
+    closed = true;
+    cleanupSocket();
+    console.log('[ws] cancel');
+    onDone?.();
+  };
+
+  const reconnect = () => {
+    if (closed) return;
+    cleanupSocket();
+    connect();
+  };
+
+  connect();
+
+  return { cancel, reconnect };
 }

@@ -266,3 +266,21 @@ export interface AgentPresetListValue {
   /** 可用人设列表 */
   presets: AgentPresetRow[]
 }
+
+// ============ 单次回复的 token 用量 ============
+
+/** 单次回复的 token 用量（来自 assistant/message 事件的 usage 字段） */
+export interface TokenUsage {
+  /** 输入 token 数（上下文大小） */
+  inputTokens: number
+  /** 输出 token 数 */
+  outputTokens: number
+  /** 总 token 数（可选） */
+  totalTokens?: number
+  /** 缓存读取（命中）的 token 数 */
+  cacheReadTokens?: number
+  /** 缓存写入的 token 数 */
+  cacheWriteTokens?: number
+  /** 推理 token 数 */
+  reasoningTokens?: number
+}

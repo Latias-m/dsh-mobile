@@ -3,6 +3,13 @@
     <side-menu />
     <side-bar />
 
+    <!-- 连接状态灯 + 手动重连 -->
+    <view class="conn-bar">
+      <view class="conn-dot" :class="connLight" />
+      <text class="conn-text">{{ connText }}</text>
+      <text v-if="wsStatus === 'disconnected'" class="reconnect" @click="manualReconnect">重连</text>
+    </view>
+
     <!-- 消息列表 -->
     <scroll-view
       scroll-y
@@ -16,6 +23,7 @@
         </view>
         <view v-if="b.role === 'assistant'" :id="'msg-' + i" class="bubble" :class="b.role">
           <markdown-view :text="bubbleText(b)" />
+          <text v-if="bubbleUsage(b)" class="usage-line">{{ usageText(bubbleUsage(b)) }}</text>
         </view>
       </template>
 
@@ -25,9 +33,13 @@
           <markdown-view :text="block" />
         </template>
         <text v-if="liveParts.tail" class="stream-tail">{{ liveParts.tail }}</text>
+        <text v-if="liveStream.usage" class="usage-line">{{ usageText(liveStream.usage) }}</text>
       </view>
 
     </scroll-view>
+
+    <!-- 回到底部悬浮按钮（用户上滑阅读时出现） -->
+    <view v-if="showScrollBtn" class="scroll-down" @click="scrollToBottomNow">↓</view>
 
     <!-- 输入框 -->
     <view class="input-bar">
@@ -53,11 +65,13 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick } from 'vue';
-import { onLoad, onUnload, onBackPress, onReady } from '@dcloudio/uni-app';
+import { onLoad, onUnload, onShow, onHide, onBackPress, onReady } from '@dcloudio/uni-app';
 import { sendPrompt, cancelSession } from '@/api/client';
-import { followSession } from '@/api/ws';
+import { followSession, type FollowHandle, type WsConnStatus } from '@/api/ws';
 import { toBubbles, type Bubble, type AssistantPart } from '@/api/history';
+import type { TokenUsage } from '@/api/types';
 import { useGlobalStore } from '@/store/global';
+import { KEY_COOKIE } from '@/constants';
 
 // 阻止 uni-app 把页面 query 参数（sessionId/title）透传到根元素，避免 title 变成浏览器 tooltip
 defineOptions({ inheritAttrs: false });
@@ -66,13 +80,32 @@ const sessionId = ref('');
 const bubbles = ref<Bubble[]>([]);
 const draft = ref('');
 const sending = ref(false);
-let cancelFollow: (() => void) | null = null;
+let followHandle: FollowHandle | null = null;
 const global = useGlobalStore();
+
+// —— ws 连接状态 + 断线重连 ——
+const wsStatus = ref<WsConnStatus>('disconnected'); // 物理连接状态
+let inBackground = false; // 是否在后台（后台保留 timer 但不重连）
+let reconnectTimer: ReturnType<typeof setInterval> | null = null;
+
+// 状态灯：绿=已连接，黄=断了但连过 token（有 cookie），红=从没连过 token
+const connLight = computed(() => {
+  if (wsStatus.value === 'connected') return 'green';
+  if (uni.getStorageSync(KEY_COOKIE)) return 'yellow';
+  return 'red';
+});
+
+const connText = computed(() => {
+  if (wsStatus.value === 'connected') return '已连接';
+  if (uni.getStorageSync(KEY_COOKIE)) return '已断开';
+  return '未连接';
+});
 
 // —— 流式打字机状态（live 消息：流式与完成共用同一个元素） ——
 interface LiveStream {
   text: string; // 累积的完整 markdown 文本
   done: boolean; // 是否已完成（完成后整段按 markdown 渲染）
+  usage?: TokenUsage; // 本轮 token 用量（完成时填充）
 }
 const liveStream = ref<LiveStream | null>(null);
 
@@ -166,15 +199,38 @@ function scrollToBottom(force = false) {
   });
 }
 
+// 是否显示「回到底部」按钮（用户上滑阅读时出现）
+const showScrollBtn = computed(() => !stickToBottom.value);
+
+// 主动回到底部（用户点按钮）
+function scrollToBottomNow() {
+  stickToBottom.value = true;
+  scrollToBottom(true);
+}
+
 // —— 气泡操作 ——
-function appendAssistant(text: string) {
+function appendAssistant(text: string, usage?: TokenUsage) {
   bubbles.value.push({
     role: 'assistant',
     seq: 0,
     time: Date.now(),
     parts: [{ kind: 'text', seq: 0, text }],
+    usage,
   });
-  scrollToBottom(true);
+  scrollToBottom(); // 尊重用户当前滚动位置（上滑时不强制沉底）
+}
+
+// token 用量摘要（显示在 AI 消息下方）
+function usageText(u?: TokenUsage): string {
+  if (!u) return '';
+  const parts = [`入 ${u.inputTokens}`, `出 ${u.outputTokens}`];
+  if (u.cacheReadTokens) parts.push(`缓存命中 ${u.cacheReadTokens}`);
+  return parts.join(' · ');
+}
+
+// 取 AI 气泡的 usage（用户气泡没有）
+function bubbleUsage(b: Bubble): TokenUsage | undefined {
+  return b.role === 'assistant' ? b.usage : undefined;
 }
 
 function appendUser(text: string) {
@@ -192,6 +248,7 @@ function commitLive() {
         seq: 0,
         time: Date.now(),
         parts: [{ kind: 'text', seq: 0, text }],
+        usage: liveStream.value.usage,
       });
     }
     liveStream.value = null;
@@ -219,11 +276,62 @@ function handleAssistantStream(f: any) {
   }
 }
 
+// 等待 ws 连接成功（或超时）
+function waitForConnected(timeoutMs = 3000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const check = () => {
+      if (wsStatus.value === 'connected') {
+        resolve(true);
+        return;
+      }
+      if (Date.now() - start > timeoutMs) {
+        resolve(false);
+        return;
+      }
+      setTimeout(check, 100);
+    };
+    check();
+  });
+}
+
+// 5s 定时重连：仅离开页面（onUnload）时清除；后台（onHide）保留 timer 但不触发重连
+function startReconnectTimer() {
+  if (reconnectTimer) return;
+  reconnectTimer = setInterval(() => {
+    if (inBackground) return;
+    if (wsStatus.value === 'disconnected') followHandle?.reconnect();
+  }, 5000);
+}
+
+function stopReconnectTimer() {
+  if (reconnectTimer) {
+    clearInterval(reconnectTimer);
+    reconnectTimer = null;
+  }
+}
+
+function manualReconnect() {
+  followHandle?.reconnect();
+}
+
 async function onSend() {
   const text = draft.value.trim();
   if (!text || !sessionId.value || sending.value) return;
   sending.value = true;
   draft.value = '';
+
+  // 断线时先重连，成功后再发送（回复走 WebSocket，必须先确保已连）
+  if (wsStatus.value === 'disconnected') {
+    followHandle?.reconnect();
+    const connected = await waitForConnected(3000);
+    if (!connected) {
+      sending.value = false;
+      uni.showToast({ title: '连接失败，请重试', icon: 'none' });
+      return;
+    }
+  }
+
   commitLive(); // 固化上一条 live 消息
   appendUser(text); // 乐观渲染：先显示用户消息
   const ok = await sendPrompt(sessionId.value, text);
@@ -253,7 +361,7 @@ onLoad((options) => {
   uni.setNavigationBarTitle({ title });
 
   // 订阅事件流：snapshot = 历史快照，event = 新事件，assistant-stream = 流式分片
-  cancelFollow = followSession(
+  followHandle = followSession(
     sid,
     (frame: any) => {
       if (frame?.type === 'snapshot') {
@@ -262,12 +370,13 @@ onLoad((options) => {
       } else if (frame?.type === 'event' && frame.event?.type === 'assistant/message') {
         // 整段提交：把 live 流标为完成，仍用同一元素渲染，避免切换闪烁
         const text = textOf(frame.event?.data?.message?.content);
+        const usage = frame.event?.data?.usage as TokenUsage | undefined;
         const atBottom = stickToBottom.value;
         if (liveStream.value) {
-          liveStream.value = { text: text || liveStream.value.text, done: true };
+          liveStream.value = { text: text || liveStream.value.text, done: true, usage };
           if (atBottom) scrollToBottom(true);
         } else if (text) {
-          appendAssistant(text);
+          appendAssistant(text, usage);
         }
       } else if (frame?.type === 'assistant-stream') {
         handleAssistantStream(frame.frame);
@@ -277,18 +386,31 @@ onLoad((options) => {
       }
     },
     () => {
-      // 流结束（end/error/close）。长连接断开后暂无自动重连，仅提示一次。
-      if (sessionId.value) uni.showToast({ title: '连接已断开', icon: 'none' });
-    }
+      // 仅显式取消（离开页面）时回调；断线重连由 timer 驱动，不再提示
+    },
+    (status) => {
+      wsStatus.value = status;
+    },
   );
+
+  startReconnectTimer();
 });
 
 onReady(() => {
   measureViewHeight();
 });
 
+onShow(() => {
+  inBackground = false;
+});
+
+onHide(() => {
+  inBackground = true; // 后台保留 timer 但不触发重连
+});
+
 onUnload(() => {
-  cancelFollow?.();
+  stopReconnectTimer();
+  followHandle?.cancel();
 });
 
 // 返回时稳定回到 index：清空页面栈，避免回到中间页（connect / session-create）或直接退出
@@ -303,6 +425,47 @@ onBackPress(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
+}
+
+/* 连接状态灯（顶部左侧）+ 手动重连 */
+.conn-bar {
+  position: fixed;
+  top: 12rpx;
+  left: 20rpx;
+  z-index: 950;
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 8rpx 16rpx;
+  border-radius: 20rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.08);
+}
+
+.conn-dot {
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 50%;
+}
+.conn-dot.green {
+  background: #07c160;
+}
+.conn-dot.yellow {
+  background: #f0ad4e;
+}
+.conn-dot.red {
+  background: #fa5151;
+}
+
+.conn-text {
+  font-size: 22rpx;
+  color: #666;
+}
+
+.reconnect {
+  font-size: 22rpx;
+  color: #007aff;
+  margin-left: 4rpx;
 }
 
 .msg-list {
@@ -344,6 +507,15 @@ onBackPress(() => {
   word-break: break-word;
 }
 
+/* token 用量摘要（AI 消息下方的小字） */
+.usage-line {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 20rpx;
+  color: #999;
+  user-select: text;
+}
+
 .input-bar {
   display: flex;
   align-items: center;
@@ -372,5 +544,22 @@ onBackPress(() => {
 .stop-btn {
   background: #fa5151;
   color: #fff;
+}
+
+.scroll-down {
+  position: fixed;
+  right: 40rpx;
+  bottom: 180rpx;
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2rpx 10rpx rgba(0, 0, 0, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40rpx;
+  color: #333;
+  z-index: 900;
 }
 </style>

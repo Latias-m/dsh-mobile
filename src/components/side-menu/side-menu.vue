@@ -1,10 +1,8 @@
 <template>
-  <!-- 收起状态：可拖拽手柄（movable-view 跨端自动处理 touch/mouse） -->
-  <movable-area v-if="!expanded" class="drag-area">
-    <movable-view direction="vertical" class="handle" :y="y" @change="onChange" @click="openMenu">
-      <text class="arrow">></text>
-    </movable-view>
-  </movable-area>
+  <!-- 收起状态：右上角「☰」按钮 -->
+  <view v-if="!expanded" class="menu-btn" @click="openMenu">
+    <text class="menu-icon">☰</text>
+  </view>
 
   <!-- 展开状态：遮罩 + 左侧面板 -->
   <template v-else>
@@ -71,12 +69,7 @@ const expanded = ref(false);
 // 是否已连接：未连接时不展示会话列表（不兜底成空列表）
 const connected = computed(() => global.status === 'connected');
 const sessions = ref<SessionListItem[]>([]);
-const y = ref(200); // 初始垂直位置（px）
 const menuWidth = ref(300); // 面板宽度（px）
-
-function onChange(e: any) {
-  y.value = e.detail.y;
-}
 
 // 拖拽调整面板宽度
 let resizeStartX = 0;
@@ -129,12 +122,18 @@ function onAddSession() {
 </script>
 
 <style lang="scss" scoped>
-.drag-area {
+.menu-btn {
   position: fixed;
-  left: 0;
-  top: 25vh;
-  width: 24rpx;
-  height: 50vh;
+  right: 20rpx;
+  top: 20rpx;
+  width: 72rpx;
+  height: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 2rpx 10rpx rgba(0, 0, 0, 0.12);
   z-index: 1000;
 }
 
@@ -149,17 +148,10 @@ function onAddSession() {
   z-index: 1001;
 }
 
-/* 收起手柄 */
-.handle {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  width: 25rpx;
-  height: 60rpx;
-  background: #ffffff;
-  border-radius: 0 8rpx 8rpx 0;
-  box-shadow: -2rpx 0 10rpx rgba(0, 0, 0, 0.12);
+.menu-icon {
+  font-size: 40rpx;
+  color: #333;
+  line-height: 1;
 }
 
 .arrow {
