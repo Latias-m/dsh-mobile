@@ -10,15 +10,21 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import MpHtml from 'mp-html/dist/uni-app/components/mp-html/mp-html.vue';
-import { marked } from 'mp-html/plugins/markdown/marked.min.js';
+import MarkdownIt from 'markdown-it';
 
 const props = defineProps<{ text: string }>();
+
+// ES5 兼容的 markdown 解析器（markdown-it 不用 Unicode 属性转义，App 端 WebView 可解析）
+const md = new MarkdownIt({
+  html: false, // 关闭 raw HTML，防 XSS
+  linkify: true, // 自动识别链接
+});
 
 // markdown → html（解析失败时回退为纯文本，避免白屏）
 const html = computed<string>(() => {
   if (!props.text) return '';
   try {
-    return marked.parse(props.text);
+    return md.render(props.text);
   } catch {
     return props.text;
   }

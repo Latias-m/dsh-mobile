@@ -8,7 +8,8 @@ export const KEY_TOKEN = 'dsh_token'
 export const KEY_CONNECTED = 'connected'
 
 // ============ 默认值 ============
-export const DEFAULT_BASE_URL = 'http://192.168.8.219:3080'
+// 单一「服务器地址」= 桥地址：auth/api/ws 全走它（桥负责剥 origin、改 Host、透传 cookie）
+export const DEFAULT_BASE_URL = 'http://192.168.8.219:3081'
 
 // ============ RPC 方法（HTTP，session 命名空间）============
 export const HttpMethodList = {

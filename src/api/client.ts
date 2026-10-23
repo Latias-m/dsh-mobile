@@ -60,6 +60,14 @@ export async function connect(token: string): Promise<ConnectResult> {
   }
 }
 
+/**
+ * 设置 DSH 服务地址（App 端直连 / H5 端存下来备用）。
+ * 连接页在 connect 之前调用，把用户填的 url 写进存储。
+ */
+export function setBaseUrl(url: string): void {
+  connectFunction.setUrl(url.trim());
+}
+
 export async function getList(): Promise<SessionListItem[]> {
   let res = await connectFunction.send(HttpMethodList.list, {});
   if (res?.result?.ok) {
@@ -124,6 +132,26 @@ export async function sendPrompt(sessionId: string, text: string): Promise<boole
   };
   const res = await connectFunction.send(HttpMethodList.prompt, param);
   return res?.result?.ok === true;
+}
+
+/**
+ * 停止当前正在生成的回复（session/cancel，参数只有 sessionId）。
+ * @param sessionId 会话 id
+ * @returns 是否被接受
+ */
+export async function cancelSession(sessionId: string): Promise<boolean> {
+  const res = await connectFunction.send(HttpMethodList.cancel, { sessionId });
+  return res?.result?.ok === true;
+}
+
+/**
+ * 触发上下文压缩：发送 /compact 指令（等效于用户在聊天框输入 /compact）。
+ * 压缩结果通过 follow 流的 compaction/summary 事件下发。
+ * @param sessionId 会话 id
+ * @returns 是否被接受
+ */
+export async function compactSession(sessionId: string): Promise<boolean> {
+  return sendPrompt(sessionId, '/compact');
 }
 
 /**

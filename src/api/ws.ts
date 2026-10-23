@@ -5,8 +5,9 @@
 //   - 端点：/api/remote.mux（一个物理 WebSocket 复用多条逻辑流）
 //   - 客户端帧：open(streamId, endpoint, payload) / item / end / cancel
 //   - 服务端帧：item(streamId, value) / end / error
-//   - session/follow 的 payload = { args: { request: { address, ... } } }
+//   - session/follow 的 payload = { args: { request: { address, assistantStream, ... } } }
 //   - 返回帧 value：snapshot（历史快照）| event（新事件）| assistant-stream（流式）
+//   - assistant-stream 帧：start / chunk（text-delta / reasoning-delta / tool-call-delta / block-* / usage / finish）/ end
 
 import { WebSocketMethodList, KEY_BASE_URL, KEY_COOKIE } from '../constants';
 
@@ -26,7 +27,7 @@ function wsUrl(): string {
 }
 
 /**
- * 订阅会话事件流（整段输出，不传 assistantStream）。
+ * 订阅会话事件流（开启 assistantStream，逐段下发 assistant 输出）。
  * @param sessionId 会话 id
  * @param onFrame 收到一个 follow 帧时回调（snapshot / event / assistant-stream）
  * @param onDone 流结束（end/error/close）时回调
@@ -41,9 +42,10 @@ export function followSession(
   let closed = false;
   let task: UniApp.SocketTask | null = null;
 
-  const finish = () => {
+  const finish = (reason?: string) => {
     if (closed) return;
     closed = true;
+    console.log('[ws] finish:', reason || '');
     try {
       task?.close({});
     } catch {
@@ -62,6 +64,7 @@ export function followSession(
           args: {
             request: {
               address: { kind: 'session', sessionId },
+              assistantStream: true, // 开启流式：assistant-stream 帧逐段下发
             },
           },
         },
@@ -80,7 +83,7 @@ export function followSession(
     if (msg.type === 'item') {
       onFrame(msg.value);
     } else if (msg.type === 'end' || msg.type === 'error') {
-      finish();
+      finish(`frame:${msg.type}`);
     }
   };
 
@@ -91,15 +94,29 @@ export function followSession(
   if (cookie) header = { Cookie: String(cookie) };
   // #endif
 
+  console.log('[ws] url:', wsUrl(), '| cookie:', header.Cookie ? '有' : '无');
+
   task = uni.connectSocket({
     url: wsUrl(),
     header,
     complete: () => {},
   });
-  task.onOpen(openStream);
-  task.onMessage((res) => onMessage(String(res.data)));
-  task.onError(finish);
-  task.onClose(finish);
+  task.onOpen(() => {
+    console.log('[ws] onOpen');
+    openStream();
+  });
+  task.onMessage((res) => {
+    console.log('[ws] onMessage:', String(res.data).slice(0, 300));
+    onMessage(String(res.data));
+  });
+  task.onError(() => {
+    console.log('[ws] onError');
+    finish('error');
+  });
+  task.onClose((res: any) => {
+    console.log('[ws] onClose:', JSON.stringify(res));
+    finish('close');
+  });
 
   return finish;
 }

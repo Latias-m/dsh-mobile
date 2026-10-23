@@ -54,6 +54,8 @@
     "@dcloudio/uni-mp-xhs": "3.0.0-5020420260813003",
     "@dcloudio/uni-quickapp-webview": "3.0.0-5020420260813003",
     "@dcloudio/uni-ui": "^1.5.12",
+    "@types/markdown-it": "^14.2.0",
+    "markdown-it": "^15.0.3",
     "mp-html": "^2.5.2",
     "pinia": "^2.1.7",
     "sass": "^1.105.1",

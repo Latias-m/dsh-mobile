@@ -13,9 +13,9 @@
       <view class="panel-header">
         <view class="header-title" @click="expanded = false">
           <text class="arrow"><</text>
-          <text class="panel-title">菜单</text>
+          <text class="panel-title">会话</text>
         </view>
-        <text class="add-btn" @click="onAddSession">＋</text>
+        <text v-if="connected" class="add-btn" @click="onAddSession">＋</text>
         <view
           class="resize-handle"
           @touchstart="onResizeStart"
@@ -29,7 +29,12 @@
         />
       </view>
       <view class="panel-body">
-        <scroll-view scroll-y class="list">
+        <!-- 未连接：不兜底成空列表，给明确引导 -->
+        <view v-if="!connected" class="empty-tip">
+          <text class="empty-text">未连接 DSH</text>
+          <button class="connect-btn" size="mini" @click="onGoConnect">去连接</button>
+        </view>
+        <scroll-view v-else scroll-y class="list">
           <view
             v-for="item in sessions"
             :key="item.sessionId"
@@ -37,10 +42,13 @@
             @click="onSelect(item)"
           >
             <view class="line" hover-class="line-active" hover-start-time="0" hover-stay-time="100">
-              <text class="line-val"
-                >{{ item.projections?.values.title ?? '(未命名)'
-                }}<text v-if="item.blank" class="blank">空</text></text
-              >
+              <view class="line-main">
+                <view v-if="item.running" class="running-dot" />
+                <text class="line-val"
+                  >{{ item.projections?.values.title ?? '(未命名)'
+                  }}<text v-if="item.blank" class="blank">空</text></text
+                >
+              </view>
 
               <text class="time">{{ $formatTime(item.updatedAt) }}</text>
             </view>
@@ -60,6 +68,8 @@ import type { SessionListItem } from '@/api/types';
 const global = useGlobalStore();
 
 const expanded = ref(false);
+// 是否已连接：未连接时不展示会话列表（不兜底成空列表）
+const connected = computed(() => global.status === 'connected');
 const sessions = ref<SessionListItem[]>([]);
 const y = ref(200); // 初始垂直位置（px）
 const menuWidth = ref(300); // 面板宽度（px）
@@ -96,8 +106,14 @@ function onResizeEnd() {
 
 async function openMenu() {
   expanded.value = true;
+  if (!connected.value) return; // 未连接：不拉列表，交给「去连接」引导
   const list: SessionListItem[] = await getList();
   sessions.value = list;
+}
+
+function onGoConnect() {
+  expanded.value = false;
+  uni.navigateTo({ url: '/pages/connect/connect' });
 }
 
 function onSelect(e: SessionListItem) {
@@ -116,8 +132,9 @@ function onAddSession() {
 .drag-area {
   position: fixed;
   left: 0;
+  top: 25vh;
   width: 24rpx;
-  height: 100%;
+  height: 50vh;
   z-index: 1000;
 }
 
@@ -227,6 +244,20 @@ function onAddSession() {
   font-size: 26rpx;
 }
 
+.empty-tip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 20rpx;
+}
+
+.empty-text {
+  font-size: 26rpx;
+  color: #999;
+}
+
 .line {
   display: flex;
   justify-content: space-between;
@@ -248,5 +279,25 @@ function onAddSession() {
 .line-val {
   width: 0;
   flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.line-main {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.running-dot {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  background: #07c160;
+  margin-right: 8rpx;
+  flex-shrink: 0;
 }
 </style>

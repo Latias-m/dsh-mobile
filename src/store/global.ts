@@ -30,5 +30,10 @@ export const useGlobalStore = defineStore('global', {
     setSession(session: SessionListItem) {
       this.session = session;
     },
+    // 仅记录当前会话 id：新建会话直接进 chat 页时没有完整 SessionListItem，
+    // 但右侧菜单切换模型只需要 sessionId。
+    setSessionId(sessionId: string) {
+      this.session = { sessionId } as unknown as SessionListItem;
+    },
   },
 });

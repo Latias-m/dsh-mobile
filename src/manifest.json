@@ -1,5 +1,5 @@
 {
-    "name" : "test",
+    "name" : "DSH 移动端",
     "appid" : "__UNI__C72E11F",
     "description" : "",
     "versionName" : "1.0.0",
@@ -23,6 +23,7 @@
             /* android打包配置 */
             "android" : {
                 "permissions" : [
+                    "<uses-permission android:name=\"android.permission.INTERNET\"/>",
                     "<uses-permission android:name=\"android.permission.CHANGE_NETWORK_STATE\"/>",
                     "<uses-permission android:name=\"android.permission.MOUNT_UNMOUNT_FILESYSTEMS\"/>",
                     "<uses-permission android:name=\"android.permission.VIBRATE\"/>",
